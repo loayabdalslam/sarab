@@ -97,6 +97,12 @@ class SarabModel:
             scaling=cfg.rope_scaling,
         )
         self._embed_scale = float(np.sqrt(cfg.hidden_size)) if self.arch.embed_scale else 1.0
+        # Effective quant for layer building. The Runtime sets this to "none" when the
+        # model is streamed (layers evicted/rebuilt per token), because quantizing a layer
+        # only to immediately dequantize it for BLAS is pure overhead on the hot path —
+        # it saves no disk read and adds a large per-build cost. Quant pays off only for
+        # fully-resident models (built once) where it shrinks the cached footprint.
+        self.effective_quant = rc.quant
 
     # -- persistent (non-block) tensors --------------------------------------------
     def embed_tokens(self, ids: np.ndarray) -> np.ndarray:
@@ -133,11 +139,12 @@ class SarabModel:
         """
         out: Dict[str, object] = {}
         tmpl = self.arch.tmpl
+        quant = self.effective_quant
         for short in _REQUIRED:
             view = self.store[tmpl[short].format(i=i)]
             w = view.array("float32")
-            if self.rc.quant != "none" and short in _QUANTIZABLE:
-                bits = 8 if self.rc.quant == "int8" else 4
+            if quant != "none" and short in _QUANTIZABLE:
+                bits = 8 if quant == "int8" else 4
                 out[short] = quantize(w, bits=bits, group_size=self.rc.quant_group_size)
             else:
                 out[short] = w

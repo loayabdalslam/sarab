@@ -34,6 +34,13 @@ class Runtime:
         self._act = L.activation(self.arch.activation)
         resident = self._effective_resident(rc)
         self.resident_layers = resident
+        self.streaming = resident < self.cfg.n_layers
+        # In streaming mode, re-quantizing every evicted layer on every token is pure
+        # waste (we dequantize it right back for BLAS). Load float directly so a rebuild
+        # is just a disk read + cast, not a full quantize pass — the single biggest speedup
+        # for over-budget models.
+        if self.streaming:
+            model.effective_quant = "none"
         self.streamer = LayerStreamer(
             n_layers=self.cfg.n_layers,
             build_fn=model.build_layer,

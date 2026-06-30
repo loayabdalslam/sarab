@@ -66,11 +66,12 @@ def run_benchmark(model_id: str, cfg: RuntimeConfig, prompt: str, max_new_tokens
             print(f"[bench] WARNING: estimated resident RAM (~{est_resident_gb:.1f} GB) exceeds "
                   f"budget ({budget:.1f} GB). Lower --ram-budget to force streaming, "
                   f"or this run may swap/OOM.")
-        # Pre-build/quantize all resident layers with a visible progress bar, so the
-        # one-time cost isn't mistaken for a hang.
+        # Pre-build/quantize the resident layers with a visible progress bar.
         rt.runtime.prewarm(progress=True)
-        # Short warm-up generation to prime BLAS threads; measure the run after it.
-        _ = list(rt.generate(prompt, max_new_tokens=4, stream=True))
+        # Warm-up generation to prime BLAS threads. In streaming mode each token rebuilds
+        # many layers off disk, so a single warm-up token is enough (and keeps it quick).
+        warmup_tokens = 1 if rt.runtime.streaming else 4
+        _ = list(rt.generate(prompt, max_new_tokens=warmup_tokens, stream=True))
         with _PeakRSS() as peak:
             t0 = time.perf_counter()
             out = list(
