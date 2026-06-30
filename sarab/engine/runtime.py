@@ -50,25 +50,31 @@ class Runtime:
         """Choose how many blocks stay resident.
 
         A block is built (read off mmap + quantized) every time it is needed but not
-        cached. With a tiny window, an evicted block is rebuilt — and re-quantized — on
-        *every* token, which is catastrophically slow for a model that would have fit in
-        RAM anyway. So when the whole (quantized) model fits ~60% of the budget we keep
-        every layer resident and pay the build cost exactly once. Only genuinely
-        over-budget models stream. `resident_layers` is always honoured as a floor.
+        cached. With a tiny window, an evicted block is rebuilt on *every* token, which is
+        catastrophically slow for a model that would have fit in RAM anyway. So when the
+        resident layers fit ~55% of the budget we keep every layer resident and pay the
+        build cost once. Only genuinely over-budget models stream.
+
+        CRITICAL: a resident layer occupies its **float32** size in RAM, because the
+        compute path dequantizes once and caches the float result. Quantization shrinks
+        the *on-disk* and *streamed* footprint, NOT the resident float footprint. So the
+        estimate must use float32 bytes regardless of `quant` — otherwise an int4 7B model
+        looks like it fits 4 GB while actually needing ~30 GB resident. `resident_layers`
+        is always honoured as a floor.
         """
         floor = rc.resident_layers
         if not rc.auto_resident:
             return floor
         n = self.cfg.n_layers
         total_disk = self.model.store.total_bytes()
-        per_layer = total_disk / max(1, n)
-        # bytes a built layer occupies vs its fp16 on-disk size
-        q_factor = {"none": 2.0, "int8": 0.5, "int4": 0.25}.get(rc.quant, 1.0)
-        est_layer = per_layer * q_factor
-        budget = rc.ram_budget_bytes * 0.6                  # leave room for kv/embeds/acts
-        if est_layer * n <= budget:
+        per_layer_disk = total_disk / max(1, n)
+        # On-disk weights are typically fp16/bf16 (2 bytes). A resident, dequantized
+        # layer lives as float32 (4 bytes) -> ~2x the on-disk size, whatever the quant.
+        est_layer_resident = per_layer_disk * 2.0
+        budget = rc.ram_budget_bytes * 0.55                 # room for kv/embeds/acts/python
+        if est_layer_resident * n <= budget:
             return n                                        # whole model fits -> no eviction
-        fits = int(budget // max(1.0, est_layer))
+        fits = int(budget // max(1.0, est_layer_resident))
         return max(floor, min(n, max(1, fits)))
 
     def reset(self) -> None:

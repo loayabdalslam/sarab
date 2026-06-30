@@ -55,7 +55,16 @@ def run_benchmark(model_id: str, cfg: RuntimeConfig, prompt: str, max_new_tokens
         n_layers = rt.model_config.n_layers
         resident = rt.runtime.resident_layers
         mode = "ALL resident (fits RAM)" if resident >= n_layers else f"streaming {resident}/{n_layers}"
-        print(f"[bench] {n_layers} layers | {mode} | building (one-time)...")
+        # Estimate resident float32 footprint up front so a big model doesn't silently
+        # eat all RAM during the build. A resident layer lives as float32 (~2x its fp16
+        # on-disk size), regardless of quant.
+        est_resident_gb = (on_disk / max(1, n_layers)) * resident * 2.0
+        print(f"[bench] {n_layers} layers | {mode} | est. resident ~{est_resident_gb:.1f} GB "
+              f"| building (one-time)...")
+        if est_resident_gb > budget:
+            print(f"[bench] WARNING: estimated resident RAM (~{est_resident_gb:.1f} GB) exceeds "
+                  f"budget ({budget:.1f} GB). Lower --ram-budget to force streaming, "
+                  f"or this run may swap/OOM.")
         # Pre-build/quantize all resident layers with a visible progress bar, so the
         # one-time cost isn't mistaken for a hang.
         rt.runtime.prewarm(progress=True)
