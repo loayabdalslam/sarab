@@ -54,6 +54,7 @@ def run_benchmark(model_id: str, cfg: RuntimeConfig, prompt: str, max_new_tokens
         on_disk = rt.store.total_bytes() / 1024**3
         n_layers = rt.model_config.n_layers
         resident = rt.runtime.resident_layers
+        budget = cfg.ram_budget_gb
         mode = "ALL resident (fits RAM)" if resident >= n_layers else f"streaming {resident}/{n_layers}"
         # Estimate resident float32 footprint up front so a big model doesn't silently
         # eat all RAM during the build. A resident layer lives as float32 (~2x its fp16
@@ -77,7 +78,6 @@ def run_benchmark(model_id: str, cfg: RuntimeConfig, prompt: str, max_new_tokens
             )
             dt = time.perf_counter() - t0
         n = len(out)
-        budget = cfg.ram_budget_gb
         within = "OK" if peak.peak_gb <= budget else "OVER"
         print("\n=== SARAB benchmark ===")
         print(f"model on disk      : {on_disk:6.2f} GB")
