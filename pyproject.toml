@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sarab"
+version = "0.1.0"
+description = "SARAB — streaming LLM runtime that serves GPU-class models on an 8GB-RAM CPU"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "SARAB" }]
+keywords = ["llm", "inference", "cpu", "streaming", "serving", "vllm"]
+
+dependencies = [
+    "numpy>=1.24",
+    "huggingface_hub>=0.20",
+    "safetensors>=0.4",
+    "tokenizers>=0.15",
+    "psutil>=5.9",
+    "tqdm>=4.65",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.0"]
+# `torch` + `transformers` are ONLY a test-time reference oracle, never on the inference path.
+dev = ["pytest>=8.0", "torch", "transformers>=4.40"]
+
+[project.scripts]
+sarab = "sarab.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sarab*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
